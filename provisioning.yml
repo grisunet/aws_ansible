@@ -1,0 +1,39 @@
+---
+- name: Create a new Demo EC2 instance
+  hosts: localhost
+  gather_facts: False
+
+  vars:
+      region: eu-central-1
+      instance_type: t3.micro
+      ami: ami-0e63910157459607d  # Ubuntu 18.04 LTS
+      keypair: beegfs # pem file name
+  
+  tasks:
+
+    - name: Create an ec2 instance
+      ec2:
+         key_name: "{{ keypair }}"
+         group: launch-wizard-1  # security group name
+         instance_type: "{{ instance_type}}"
+         image: "{{ ami }}"
+         wait: true
+         region: "{{ region }}"
+         volumes:
+         - device_name: /dev/sdb
+           volume_type: gp2 #insert the volume code here
+           volume_size: 2   #size is in GB		
+           delete_on_termination: true
+         - device_name: /dev/sdc
+           volume_type: gp2 #insert the volume code here
+           volume_size: 2   #size is in GB
+           delete_on_termination: true
+         vpc_subnet_id: subnet-192b3664
+         assign_public_ip: yes
+         count_tag:
+            Name: "beegfs_{{ item }}"
+         exact_count: 1   
+         instance_tags:
+            Name: "beeGFS_{{ item }}"
+      with_items: ['1-1' , '1-2' ]      
+      register: ec2

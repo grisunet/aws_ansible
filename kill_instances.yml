@@ -1,0 +1,17 @@
+- name: Stop training instances
+  hosts: localhost
+  gather_facts: false
+  vars:
+    instance_ids:
+      - 'i-001f333523fab0fbc'
+      - 'i-0a303db408738df0a'
+    region: eu-central-1
+  tasks:
+    - name: Stop the training instances
+      ec2:
+        instance_ids: '{{ instance_ids }}'
+        region: '{{ region }}'
+        state: absent
+        wait: True
+        vpc_subnet_id: subnet-192b3664
+        assign_public_ip: yes
