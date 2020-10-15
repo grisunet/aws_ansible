@@ -1,0 +1,180 @@
+---
+# Name: ansible-aws-inventory-main.yml
+# Description:   this is the main file that calls the worker file (ansible-aws-inventory-worker.yml) to create an inventory of all the
+#                specific aws resources.
+#                Below are the resources that will be inventoried
+#                 - vpc
+#                 - subnet
+#                 - igw
+#                 - cgw
+#                 - vgw
+#                 - ami
+#                 - eip
+#                 - snapshot
+#                 - volume
+#                 - routetable
+#                 - securitygroup
+#                 - nacl
+#                 - ec2
+#                 - elb
+#                 - rds_instance
+#                 - rds_snapshot
+#                 - s3
+# Prerequisites: 
+#                - the worker file (ansible-aws-inventory-worker.yml) and the ansible hosts file must be present in the same folder as this file (ansible-aws-inventory-main.yml) 
+#                - this script requires read access to all resources it will be querying. An AWS IAM user account must be created with the necessary permissions and with access keys enabled.
+#                  At a minimum, to query all the resources mentioned above, the following permissions are required
+#                   - AmazonVPCReadOnlyAccess
+#                   - AmazonEC2ReadOnlyAccess
+#                   - ElasticLoadBalancingReadOnly
+#                   - AmazonRDSReadOnlyAccess
+#                   - AmazonS3ReadOnlyAccess
+#                  
+#                  The access key can then be provided to this playbook using environment variables
+#                  The commands below can be used to define the environment variables
+#                     export AWS_ACCESS_KEY_ID="xxxxx" 
+#                     export AWS_SECRET_ACCESS_KEY="xxxxxxx"
+#
+#                  There is currently an issue with boto unable to access us-west-3 region. Use the following command to create an additional environment variable which resolves this
+#                     export BOTO_USE_ENDPOINT_HEURISTICS=True
+#
+# Bugs:
+#                1. there is currently a bug with Ansible when using aws_s3_bucket_facts module. It is ignoring the region parameter and instead returns all buckets (instead of those for that region), 
+#                   no matter which region is provided. This means that the s3 inventory csv will have repeated bucket names in each region
+#
+# Author:        Nivlesh Chandra (nivleshc@yahoo.com)
+#
+# Version:       1.0
+# Change Log:
+#     Date       Author        Comments
+#     27/03/19   Nivlesh       Created script
+#
+# Terms:         This script is provided as is and the author does not take any responsibility for any
+#                issues that might arise. Please ensure you understand the script fully before using it
+#
+- hosts: localhost
+  connection: local
+  gather_facts: yes
+  vars:
+  - aws_regions: 
+      - eu-central-1        #Frankfurt
+  - verbose:  true          #set this to true to display results to screen or false to not display to screen
+#- owner_id: 123456789012  #this is used to find which ami's belong to you
+  - owner_id: 536407864344  #this is used to find which ami's belong to you
+
+  #define all output file headers
+  - vpc_outputfile_header: "Region;VPC ID;Is_Default;State;CIDR Block;Enable DNS Hostnames;Enable DNS Support;DHCP Options ID;Instance Tenancy"
+  - subnet_outputfile_header: "Region;Subnet ID;VPC ID;avaialability zone;cidr_block;available_ip_address_count;default_for_az;map_public_ip_on_launch;state"
+  - igw_outputfile_header: "Region;IGW ID;VPC ID;State;Tags"
+  - cgw_outputfile_header: "Region;CGW ID;BGP ASN;ip address;state;type;tags"
+  - vgw_outputfile_header: "Region;VGW ID;State;type;attachments;Tags"
+  - ami_outputfile_header: "Region;image_id;name;creation_date;state;is_public;description"
+  - eip_outputfile_header: "Region;allocation_id;association_id;domain;attached to(instance_id);network_interface_id;private_ip_address;public_ip;public_ipv4_pool"
+  - snapshot_outputfile_header: "Region;snapshot_id;owner_id;start_time;progress;state;encrypted;volume_id;volume_size;description"
+  - volume_outputfile_header: "Region;volume_id;volume_type;size;iops;encrypted;status;region;zone;create_time;attach_time;attached_to;attached_as;delete on termination;volume_status"
+  - routetable_outputfile_header: "Region;Routetable ID;VPC ID;Routes (use http://www.yamllint.com)"
+  - securitygroup_outputfile_header: "Region;SG Name;SG ID;VPC ID;Description;Ingress Rules (use http://www.yamllint.com); Egress Rules (use http://www.yamllint.com)"
+  - nacl_outputfile_header: "Region;NACL ID;VPC ID;Is Default;Subnets Associated with;Ingress Rules (use http://www.yamllint.com); Egress Rules (use http://www.yamllint.com)"
+  - ec2_outputfile_header: "Region;EC2_Instance_ID;EC2_Instance_Name;EC2_Instance_Type;EC2_Image_ID;Private IP;Availability Zone;Public IP;SubnetID;Source Dest Check;Security Groups;VPC ID;EC2_Launch_Time;EC2_Current_State"
+  - elb_outputfile_header: "Region;ELB_Type;ELB_Name;ELB_DNS_Name;Zones;Subnets;VPC_ID;Instances;Scheme;Security Groups;Listeners;State"
+  - rds_instance_outputfile_header: "Region;db_instance_identifier;availability_zone;allocated_storage;auto_minor_version_upgrade;availability_zone;backup_retention_period;instance_class;db_instance_port;db_instance_status;db_parameter_groups;db_security_groups;db_subnet_group;engine;engine_version;preferred_backup_window;preferred_maintenance_window;publicly_accessible;storage_type;security_groups;tags"
+  - rds_snapshot_outputfile_header: "Region;db_snapshot_identifier;snapshot_create_time;snapshot_type;db_instance_identifier;encrypted;percent_progress;allocated_storage;availability_zone;tags"
+  - s3_outputfile_header: "Region;Bucket Name;Creation Date"   
+  
+  #define output file names. These will be prepended with run date/time in iso6801 format
+  - output_root_folder: /home/khg/projekte/thinkparq/aws/inventory/docs/inv_
+  - outputfile_variablename_suffix: "_outputfile"
+  - outputfileheader_variablename_suffix: "_outputfile_header"
+  - vpc_outputfile:                       "{{ output_root_folder }}{{ ansible_date_time.iso8601 }}_vpc.csv"
+  - subnet_outputfile:                    "{{ output_root_folder }}{{ ansible_date_time.iso8601 }}_subnet.csv"
+  - igw_outputfile:                       "{{ output_root_folder }}{{ ansible_date_time.iso8601 }}_igw.csv"
+  - cgw_outputfile:                       "{{ output_root_folder }}{{ ansible_date_time.iso8601 }}_cgw.csv"
+  - vgw_outputfile:                       "{{ output_root_folder }}{{ ansible_date_time.iso8601 }}_vgw.csv"
+  - ami_outputfile:                       "{{ output_root_folder }}{{ ansible_date_time.iso8601 }}_ami.csv"
+  - eip_outputfile:                       "{{ output_root_folder }}{{ ansible_date_time.iso8601 }}_eip.csv"
+  - snapshot_outputfile:                  "{{ output_root_folder }}{{ ansible_date_time.iso8601 }}_snapshot.csv"
+  - volume_outputfile:                    "{{ output_root_folder }}{{ ansible_date_time.iso8601 }}_volume.csv"
+  - routetable_outputfile:                "{{ output_root_folder }}{{ ansible_date_time.iso8601 }}_routetable.csv"
+  - securitygroup_outputfile:             "{{ output_root_folder }}{{ ansible_date_time.iso8601 }}_securitygroup.csv"
+  - nacl_outputfile:                      "{{ output_root_folder }}{{ ansible_date_time.iso8601 }}_nacl.csv"
+  - ec2_outputfile:                       "{{ output_root_folder }}{{ ansible_date_time.iso8601 }}_ec2.csv"
+  - elb_outputfile:                       "{{ output_root_folder }}{{ ansible_date_time.iso8601 }}_elb.csv"
+  - rds_instance_outputfile:              "{{ output_root_folder }}{{ ansible_date_time.iso8601 }}_rds_instance.csv"
+  - rds_snapshot_outputfile:              "{{ output_root_folder }}{{ ansible_date_time.iso8601 }}_rds_snapshot.csv"
+  - s3_outputfile:                        "{{ output_root_folder }}{{ ansible_date_time.iso8601 }}_s3.csv"
+
+  #the following variables are used to enable or disable inventory for a particular resource. Use true to enable and false to disable
+  - inventory_vpc: true
+  - inventory_subnet: true
+  - inventory_igw: false
+  - inventory_cgw: false
+  - inventory_vgw: false
+  - inventory_ami: false
+  - inventory_eip: false
+  - inventory_snapshot: false
+  - inventory_volume: true
+  - inventory_routetable: false
+  - inventory_securitygroup: true
+  - inventory_nacl: false
+  - inventory_ec2: true
+  - inventory_elb: false
+  - inventory_rds_instance: false
+  - inventory_rds_snapshot: false
+  - inventory_s3: false
+
+  tasks:
+    - name: initialise output files with headers
+      lineinfile:
+        state: present
+        create: yes
+        path: "{{ lookup('vars', item + outputfile_variablename_suffix) }}"
+        line: "{{ lookup('vars', item + outputfileheader_variablename_suffix) }}"
+        insertbefore: BOF
+      with_items:
+        - vpc
+        - subnet
+        - igw
+        - cgw
+        - vgw
+        - ami
+        - eip
+        - snapshot
+        - volume
+        - routetable
+        - securitygroup
+        - nacl
+        - ec2
+        - elb
+        - rds_instance
+        - rds_snapshot
+        - s3
+    
+    - name: find all applicable resources within region
+      include_tasks: ansible-aws-inventory-worker.yml
+      loop: "{{ aws_regions }}"
+      loop_control:
+        loop_var: aws_region
+        label: "{{ aws_region }}"
+
+    - name: print out the output filenames for each of the resoureces inventoried
+      debug: 
+        msg:
+          - "{{ item }} output filename: {{ lookup('vars', item + outputfile_variablename_suffix) }}"
+      with_items:
+        - vpc
+        - subnet
+        - igw
+        - cgw
+        - vgw
+        - ami
+        - eip
+        - snapshot
+        - volume
+        - routetable
+        - securitygroup
+        - nacl
+        - ec2
+        - elb
+        - rds_instance
+        - rds_snapshot
+        - s3

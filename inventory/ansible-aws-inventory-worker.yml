@@ -1,0 +1,698 @@
+# Name: ansible-aws-inventory-worker.yml
+# Description:   this is the worker file that called the main file (ansible-aws-inventory-main.yml) to to create an inventory of all the
+#                specific aws resources. This file, the worker file and the ansible inventory file must be placed in the same folder
+# Prerequisites: 
+#                - the worker file (ansible-aws-inventory-worker.yml) and the ansible hosts file must be present in the same folder as this file (ansible-aws-inventory-main.yml) 
+#                - this script requires read access to all resources it will be querying. An AWS IAM user account must be created with the necessary permissions and with access keys enabled.
+#                  At a minimum, to query all the resources mentioned above, the following permissions are required
+#                   - AmazonVPCReadOnlyAccess
+#                   - AmazonEC2ReadOnlyAccess
+#                   - ElasticLoadBalancingReadOnly
+#                   - AmazonRDSReadOnlyAccess
+#                   - AmazonS3ReadOnlyAccess
+#                  
+#                  The access key can then be provided to this playbook using environment variables
+#                  The commands below can be used to define the environment variables
+#                     export AWS_ACCESS_KEY_ID="xxxxx" 
+#                     export AWS_SECRET_ACCESS_KEY="xxxxxxx"
+#
+#                  There is currently an issue with boto unable to access us-west-3 region. Use the following command to create an additional environment variable which resolves this
+#                     export BOTO_USE_ENDPOINT_HEURISTICS=True
+#
+# Bugs:
+#                1. there is currently a bug with Ansible when using aws_s3_bucket_facts module. It is ignoring the region parameter and instead returns all buckets (instead of those for that region), 
+#                   no matter which region is provided. This means that the s3 inventory csv will have repeated bucket names in each region
+#
+#
+# Author:        Nivlesh Chandra (nivleshc@yahoo.com)
+#
+# Version:       1.0
+# Change Log:
+#     Date       Author        Comments
+#     27/03/19   Nivlesh       Created script
+#
+# Terms:         This script is provided as is and the author does not take any responsibility for any
+#                issues that might arise. Please ensure you understand the script fully before using it
+#
+#output vpc information
+- name: get a list of all vpc in {{ aws_region }}
+  ec2_vpc_net_facts:
+    region: "{{ aws_region }}"
+  register: all_vpcs_within_region
+  when: inventory_vpc
+
+- name: output vpc details to file
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ vpc_outputfile }}"
+    line: "{{ aws_region }};{{vpc.vpc_id}};{{vpc.is_default}};{{vpc.state}};{{vpc.cidr_block}};{{vpc.enable_dns_hostnames}};{{vpc.enable_dns_support}};{{vpc.dhcp_options_id}};{{vpc.instance_tenancy}}"
+  loop: "{{ all_vpcs_within_region.vpcs }}"
+  loop_control:
+    loop_var: vpc
+    label: "{{ aws_region }} {{ vpc.vpc_id }}"
+  when: inventory_vpc
+
+- name: output vpc details to screen
+  debug:
+    msg:
+      - "vpc_id: {{vpc.vpc_id}}"
+      - "is_default: {{vpc.is_default}}"
+      - "state: {{vpc.state}}"
+      - "cidr_block: {{vpc.cidr_block}}"
+      - "enable_dns_hostnames: {{vpc.enable_dns_hostnames}}"
+      - "enable_dns_support: {{vpc.enable_dns_support}}"
+      - "dhcp_options_id: {{vpc.dhcp_options_id}}"
+      - "instance_tenancy: {{vpc.instance_tenancy}}"
+  loop: "{{ all_vpcs_within_region.vpcs }}"
+  loop_control:
+    loop_var: vpc
+    label: "{{ aws_region }} {{ vpc.vpc_id }}"
+  when: inventory_vpc and verbose
+
+#output subnet information
+- name: get a list of all subnets in {{ aws_region }}
+  ec2_vpc_subnet_facts:
+    region: "{{ aws_region }}"
+  register: all_subnets_within_region
+  when: inventory_subnet
+
+- name: output subnet details to file
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ subnet_outputfile }}"
+    line: "{{ aws_region }};{{ subnet.subnet_id }};{{ subnet.vpc_id }};{{ subnet.availability_zone }};{{ subnet.cidr_block }};{{ subnet.available_ip_address_count }};{{ subnet.default_for_az }};{{ subnet.map_public_ip_on_launch }};{{ subnet.state }}"
+  loop: "{{ all_subnets_within_region.subnets }}"
+  loop_control:
+    loop_var: subnet
+    label: "{{ aws_region }} {{ subnet.subnet_id }}"
+  when: inventory_subnet
+
+- name: output subnet details to screen
+  debug:
+    msg:
+      - "subnet_id: {{subnet.subnet_id}}"
+      - "vpc_id: {{subnet.vpc_id}}"
+      - "availability_zone: {{subnet.availability_zone}}"
+      - "cidr_block: {{subnet.cidr_block}}"
+      - "available_ip_address_count: {{subnet.available_ip_address_count}}"
+      - "default_for_az: {{subnet.default_for_az}}"
+      - "map_public_ip_on_launch: {{subnet.map_public_ip_on_launch}}"
+      - "state: {{subnet.state}}"
+  loop: "{{ all_subnets_within_region.subnets }}"
+  loop_control:
+    loop_var: subnet
+    label: "{{ aws_region }} {{ subnet.subnet_id }}"
+  when: inventory_subnet and verbose
+
+#output  internet gateway information
+- name: get a list of all internet gateway in {{ aws_region }}
+  ec2_vpc_igw_facts:
+    region: "{{ aws_region }}"
+  register: all_igws_within_region
+  when: inventory_igw
+
+- name: output igw details to file
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ igw_outputfile }}"
+    line: "{{ aws_region }};{{ igw.internet_gateway_id }};{{ igw.attachments[0].vpc_id | default('') }};{{ igw.attachments[0].state | default('') }};{{ igw.tags }}"
+  loop: "{{ all_igws_within_region.internet_gateways }}"
+  loop_control:
+    loop_var: igw
+    label: "{{ aws_region }} {{ igw.internet_gateway_id }}"
+  when: inventory_igw
+
+- name: output igw details to screen
+  debug:
+    msg:
+      - "gateway_id: {{ igw.internet_gateway_id }}"
+      - "attached to: {{ igw.attachments[0].vpc_id }}"
+      - "state: {{ igw.attachments[0].state }}"
+      - "tags: {{ igw.tags }}"
+  loop: "{{ all_igws_within_region.internet_gateways }}"
+  loop_control:
+    loop_var: igw
+    label: "{{ aws_region }} {{ igw.internet_gateway_id }}"
+  when: inventory_igw and verbose
+
+#output cgw  information
+- name: get a list of all cgw in {{ aws_region }}
+  ec2_customer_gateway_facts:
+    region: "{{ aws_region }}"
+  register: all_cgws_within_region
+  when: inventory_cgw
+
+- name: output cgw details to file
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ cgw_outputfile }}"
+    line: "{{ aws_region }};{{ cgw.customer_gateway_id }};{{ cgw.bgp_asn }};{{ cgw.ip_address }};{{ cgw.state }}; {{ cgw.type }};{{ cgw.tags }}"
+  loop: "{{ all_cgws_within_region.customer_gateways }}"
+  loop_control:
+    loop_var: cgw
+    label: "{{ aws_region }} {{ cgw.customer_gateway_id }}"
+  when: inventory_cgw
+
+- name: output cgw details to screen
+  debug:
+    msg:
+      - "customer_gateway_id: {{ cgw.customer_gateway_id }}"
+      - "bgp_asn: {{ cgw.bgp_asn }}"
+      - "ip_address: {{ cgw.ip_address }}"
+      - "state: {{ cgw.state }}"
+      - "type:  {{ cgw.type }}"
+      - "tags:  {{ cgw.tags }}"
+  loop: "{{ all_cgws_within_region.customer_gateways }}"
+  loop_control:
+    loop_var: cgw
+    label: "{{ aws_region }} {{ cgw.customer_gateway_id }}"
+  when: inventory_cgw and verbose
+
+#output vgw information
+- name: get a list of all vgw in {{ aws_region }}
+  ec2_vpc_vgw_facts:
+    region: "{{ aws_region }}"
+  register: all_vgws_within_region
+  when: inventory_vgw
+
+- name: output vgw details to file
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ vgw_outputfile }}"
+    line: "{{ aws_region }};{{ vgw.vpn_gateway_id }};{{ vgw.state }};{{ vgw.type }};{{ vgw.attachments | default('') }};{{ vgw.tags }}"
+  loop: "{{ all_vgws_within_region.virtual_gateways }}"
+  loop_control:
+    loop_var: vgw
+    label: "{{ aws_region }} {{ vgw.vpn_gateway_id }}"
+  when: inventory_vgw
+
+- name: output vgw details to screen
+  debug:
+    msg:
+      - "vpn_gateway_id: {{ vgw.vpn_gateway_id }}"
+      - "state: {{ vgw.state }}"
+      - "type:  {{ vgw.type }}"
+      - "attachments: {{ vgw.attachments | default('') }}"
+      - "tags:  {{ vgw.tags }}"
+  loop: "{{ all_vgws_within_region.virtual_gateways }}"
+  loop_control:
+    loop_var: vgw
+    label: "{{ aws_region }} {{ vgw.vpn_gateway_id }}"
+  when: inventory_vgw and verbose
+
+#output ami information
+- name: get a list of all ami in {{ aws_region }}
+  ec2_ami_facts:
+    region: "{{ aws_region }}"
+    owners: "{{owner_id | int }}"
+  register: all_amis_within_region
+  when: inventory_ami
+
+- name: output ami details to file
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ ami_outputfile }}"
+    line: "{{ aws_region }};{{ami.image_id}};{{ami.name}};{{ami.creation_date}};{{ami.state}};{{ami.public}};{{ami.description}}"
+  loop: "{{ all_amis_within_region.images }}"
+  loop_control:
+    loop_var: ami
+    label: "{{ aws_region }} {{ ami.image_id }}"
+  when: inventory_ami
+
+- name: output ami details to screen
+  debug:
+    msg:
+      - "image_id: {{ami.image_id}}"
+      - "name: {{ami.name}}"
+      - "creation_date: {{ami.creation_date}}"
+      - "state: {{ami.state}}"
+      - "is_public: {{ami.public}}"
+      - "description: {{ami.description}}"
+  loop: "{{ all_amis_within_region.images }}"
+  loop_control:
+    loop_var: ami
+    label: "{{ aws_region }} {{ ami.image_id }}"
+  when: inventory_ami and verbose
+
+#output eip information
+- name: get a list of all eip in {{ aws_region }}
+  ec2_eip_facts:
+    region: "{{ aws_region }}"
+  register: all_eips_within_region
+  when: inventory_eip
+
+- name: output eip details to file when eip is not associated to a resource
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ eip_outputfile }}"
+    line: "{{ aws_region }};{{ eip.allocation_id | default('') }};;{{ eip.domain }};;;;{{eip.public_ip}};{{eip.public_ipv4_pool}}"
+  loop: "{{ all_eips_within_region.addresses }}"
+  loop_control:
+    loop_var: eip
+    label: "{{ aws_region }} {{ eip.allocation_id }}"
+  when: inventory_eip and (eip.association_id is not defined)
+
+- name: output eip details to file when eip is associated to a resource
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ eip_outputfile }}"
+    line: "{{ aws_region }};{{ eip.allocation_id | default('') }};{{ eip.association_id }};{{ eip.domain }};{{ eip.instance_id}};{{eip.network_interface_id}};{{eip.private_ip_address}};{{eip.public_ip}};{{eip.public_ipv4_pool}}"
+  loop: "{{ all_eips_within_region.addresses }}"
+  loop_control:
+    loop_var: eip
+    label: "{{ aws_region }} {{ eip.allocation_id }}"
+  when: inventory_eip and (eip.association_id is defined)
+
+- name: output eip details to screen
+  debug:
+    msg:
+      - "{{ all_eips_within_region }}"
+  when: inventory_eip and verbose
+
+#output snapshot information
+- name: get a list of all snapshots in {{ aws_region }}
+  ec2_snapshot_facts:
+    region: "{{ aws_region }}"
+    filters:
+      owner-id: "{{ owner_id | int}}"
+  register: all_snapshots_within_region
+  when: inventory_snapshot
+
+- name: output snapshot details to file
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ snapshot_outputfile }}"
+    line: "{{ aws_region }};{{snapshot.snapshot_id}};{{snapshot.owner_id}};{{snapshot.start_time}};{{snapshot.progress}};{{snapshot.state}};{{snapshot.encrypted}};{{snapshot.volume_id}};{{snapshot.volume_size}};{{snapshot.description}}"
+  loop: "{{ all_snapshots_within_region.snapshots }}"
+  loop_control:
+    loop_var: snapshot
+    label: "{{ aws_region }} {{ snapshot.snapshot_id }}"
+  when: inventory_snapshot
+
+- name: output snapshot details to screen
+  debug:
+    msg:
+      - "snapshot_id: {{snapshot.snapshot_id}}"
+      - "owner_id: {{snapshot.owner_id}}"
+      - "start_time: {{snapshot.start_time}}"
+      - "progress: {{snapshot.progress}}"
+      - "state: {{snapshot.state}}"
+      - "encrypted: {{snapshot.encrypted}}"
+      - "volume_id: {{snapshot.volume_id}}"
+      - "volume_size: {{snapshot.volume_size}}"
+      - "description: {{snapshot.description}}"
+  loop: "{{ all_snapshots_within_region.snapshots }}"
+  loop_control:
+    loop_var: snapshot
+    label: "{{ aws_region }} {{ snapshot.snapshot_id }}"
+  when: inventory_snapshot and verbose
+
+#output volume information
+- name: get a list of all volumes in {{ aws_region }}
+  ec2_vol_facts:
+    region: "{{ aws_region }}"
+    filters:
+      volume-type:
+        - gp2
+        - io1
+        - st1
+        - sc1
+        - standard
+  register: all_volumes_within_region
+  when: inventory_volume
+
+- name: output volume details to file
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ volume_outputfile }}"
+    line: "{{ aws_region }};{{volume.id}};{{volume.type}};{{volume.size}};{{volume.iops}};{{volume.encrypted}};{{volume.status}};{{volume.region}};{{volume.zone}};{{volume.create_time}};{{volume.attachment_set.attach_time}};{{volume.attachment_set.instance_id}};{{volume.attachment_set.device}};{{volume.attachment_set.delete_on_termination}};{{volume.attachment_set.status}}"
+  loop: "{{ all_volumes_within_region.volumes }}"
+  loop_control:
+    loop_var: volume
+    label: "{{ aws_region }} {{ volume.id }}"
+  when: inventory_volume
+
+- name: output volumes details to screen
+  debug:
+    msg:
+      - "volume_id: {{volume.id}}"
+      - "volume_type: {{volume.type}}"
+      - "size: {{volume.size}}"
+      - "iops: {{volume.iops}}"
+      - "encrypted: {{volume.encrypted}}"
+      - "status: {{volume.status}}"
+      - "region: {{volume.region}}"
+      - "zone: {{volume.zone}}"
+      - "create_time: {{volume.create_time}}"
+      - "attach_time: {{volume.attachment_set.attach_time}}"
+      - "attached_to; {{volume.attachment_set.instance_id | default('')}}"
+      - "attached as: {{volume.attachment_set.device | default('')}}"
+      - "delete_on_termination: {{volume.attachment_set.delete_on_termination}}"
+      - "volume_status: {{volume.attachment_set.status}}"
+  loop: "{{ all_volumes_within_region.volumes }}"
+  loop_control:
+    loop_var: volume
+    label: "{{ aws_region }} {{ volume.id }}"
+  when: inventory_volume and verbose
+
+#output route table information
+- name: get a list of all route tables in {{ aws_region }}
+  ec2_vpc_route_table_facts:
+    region: "{{ aws_region }}"
+  register: all_routetables_within_region
+  when: inventory_routetable
+
+- name: output route table details to file
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ routetable_outputfile }}"
+    line: "{{ aws_region }};{{ routetable.id }};{{ routetable.vpc_id }};{{ routetable.routes }}"
+  loop: "{{ all_routetables_within_region.route_tables }}"
+  loop_control:
+    loop_var: routetable
+    label: "{{ aws_region }} {{ routetable.id }}"
+  when: inventory_routetable
+
+- name: output route table details to screen
+  debug:
+    msg:
+      - "routetable_id: {{ routetable.id }} "
+      - "vpc_id: {{ routetable.vpc_id }}"
+      - "routes: {{ routetable.routes }}"
+  loop: "{{ all_routetables_within_region.route_tables }}"
+  loop_control:
+    loop_var: routetable
+    label: "{{ aws_region }} {{ routetable.id }}"
+  when: inventory_routetable and verbose
+
+#output security group information
+- name: get a list of all security groups in {{ aws_region }}
+  ec2_group_facts:
+    region: "{{ aws_region }}"
+  register: all_securitygroups_within_region
+  when: inventory_securitygroup
+
+- name: output security group details to file
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ securitygroup_outputfile }}"
+    line: "{{ aws_region }};{{ securitygroup.group_name }};{{ securitygroup.group_id }};{{ securitygroup.vpc_id }};{{ securitygroup.description }};{{ securitygroup.ip_permissions }};{{ securitygroup.ip_permissions_egress }}"
+  loop: "{{ all_securitygroups_within_region.security_groups }}"
+  loop_control:
+    loop_var: securitygroup
+    label: "{{ aws_region }} {{ securitygroup.group_id }}"
+  when: inventory_securitygroup
+
+- name: output security group details to screen
+  debug:
+    msg:
+      - "group_name:  {{ securitygroup.group_name }}"
+      - "group_id:    {{ securitygroup.group_id }}"
+      - "vpc_id:      {{ securitygroup.vpc_id }}"
+      - "description: {{ securitygroup.description }}"
+      - "ingress:     {{ securitygroup.ip_permissions }}"
+      - "egress:      {{ securitygroup.ip_permissions_egress }}"
+  loop: "{{ all_securitygroups_within_region.security_groups }}"
+  loop_control:
+    loop_var: securitygroup
+    label: "{{ aws_region }} {{ securitygroup.group_id }}"
+  when: inventory_securitygroup and verbose
+
+#output network acl information
+- name: get a list of all nacls in {{ aws_region }}
+  ec2_vpc_nacl_facts:
+    region: "{{ aws_region }}"
+  register: all_nacls_within_region
+  when: inventory_nacl
+
+- name: output nacl details to file
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ nacl_outputfile }}"
+    line: "{{ aws_region }};{{ nacl.nacl_id }};{{ nacl.vpc_id }};{{ nacl.is_default }};{{ nacl.subnets }};{{ nacl.ingress }};{{ nacl.egress }}"
+  loop: "{{ all_nacls_within_region.nacls }}"
+  loop_control:
+    loop_var: nacl
+    label: "{{ aws_region }} {{ nacl.nacl_id }}"
+  when: inventory_nacl
+
+- name: output nacl details to screen
+  debug:
+    msg:
+      - "nacl_id:                 {{ nacl.nacl_id }}"
+      - "vpc_id:                  {{ nacl.vpc_id }}"
+      - "is_default:              {{ nacl.is_default }}"
+      - "subnets associated with: {{ nacl.subnets }}"
+      - "ingress:                 {{ nacl.ingress }}"
+      - "egress:                  {{ nacl.egress }}"
+  loop: "{{ all_nacls_within_region.nacls}}"
+  loop_control:
+    loop_var: nacl
+    label: "{{ aws_region }} {{ nacl.nacl_id }}"
+  when: inventory_nacl and verbose
+
+#output EC2 information
+- name: get a list of all ec2 instances in {{ aws_region }}
+  ec2_instance_facts:
+    region: "{{ aws_region }}"
+  register: all_ec2_instances_within_region
+  when: inventory_ec2
+
+- name: output ec2 instance details to file
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ ec2_outputfile }}"
+    line: "{{ aws_region }};{{ ec2instance.instance_id }};{{ ec2instance.tags.Name | default('') }};{{ ec2instance.instance_type }};{{ ec2instance.image_id }};{{ ec2instance.private_ip_address }};{{ ec2instance.placement.availability_zone }};{{ ec2instance.public_ip_address | default('') }};{{ ec2instance.subnet_id }};{{ ec2instance.source_dest_check }};{{ ec2instance.security_groups }};{{ ec2instance.vpc_id }};{{ ec2instance.launch_time }};{{ ec2instance.state.name }}"
+  loop: "{{ all_ec2_instances_within_region.instances }}"
+  loop_control:
+    loop_var: ec2instance
+    label: "{{ aws_region }} {{ ec2instance.instance_id }}"
+  when: inventory_ec2
+
+- name: output ec2 instance details to screen
+  debug:
+    msg:
+      - "instance_id: {{ ec2instance.instance_id }}"
+      - "instance_name: {{ ec2instance.tags.Name | default('') }}"
+      - "instance_type: {{ ec2instance.instance_type }}"
+      - "image_id: {{ ec2instance.image_id }}"
+      - "private_ip_address: {{ ec2instance.private_ip_address }}"
+      - "availability_zone: {{ ec2instance.placement.availability_zone }}"
+      - "public_ip_address: {{ ec2instance.public_ip_address | default('') }}"
+      - "subnet_id: {{ ec2instance.subnet_id }}"
+      - "souce_dest_check: {{ ec2instance.source_dest_check }}"
+      - "security_groups: {{ ec2instance.security_groups }}"
+      - "vpc_id: {{ ec2instance.vpc_id }}"
+      - "launch_time: {{ ec2instance.launch_time }}"
+      - "state: {{ ec2instance.state.name }}"
+  ignore_errors: yes
+  loop: "{{ all_ec2_instances_within_region.instances }}"
+  loop_control:
+    loop_var: ec2instance
+    label: "{{ aws_region }} {{ ec2instance.instance_id }}"
+  when: inventory_ec2 and verbose
+
+#output classic ELB information
+- name: get a list of all classic elb in {{ aws_region }}
+  ec2_elb_facts:
+    region: "{{ aws_region }}"
+  register: all_classic_elbs_within_region
+  when: inventory_elb
+
+- name: output classic elb details to file
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ elb_outputfile }}"
+    line: "{{ aws_region }};classic;{{ elb.name }};{{ elb.dns_name }};{{ elb.zones }};{{ elb.subnets }};{{ elb.vpc_id }};{{ elb.instances }};{{ elb.scheme }};{{ elb.security_groups }};{{ elb.listeners }};{{ elb.state | default('')}}"
+  loop: "{{ all_classic_elbs_within_region.elbs }}"
+  loop_control:
+    loop_var: elb
+    label: "{{ aws_region }} {{ elb.name }}"
+  when: inventory_elb
+
+- name: output classic elb details to screen
+  debug:
+    msg:
+      - "elb_type: classic"
+      - "elb_name: {{ elb.name }}"
+      - "elb_dns_name: {{ elb.dns_name }}"
+      - "elb_zones: {{ elb.zones }}"
+      - "elb_subnets: {{ elb.subnets }}"
+      - "elb_vpc_id: {{ elb.vpc_id }}"
+      - "elb_instances: {{ elb.instances }}"
+      - "elb_scheme: {{ elb.scheme }}"
+      - "elb_security_groups: {{ elb.security_groups }}"
+      - "elb_listeners: {{ elb.listeners }}"
+      - "elb_state: {{ elb.state | default('') }}"
+  loop: "{{ all_classic_elbs_within_region.elbs }}"
+  loop_control:
+    loop_var: elb
+    label: "{{ aws_region }} {{ elb.name }}"
+  when: inventory_elb and verbose
+
+#output application ELB information
+- name: get a list of all application elb in {{ aws_region }}
+  elb_application_lb_facts:
+    region: "{{ aws_region }}"
+  register: all_app_elbs_within_region
+  when: inventory_elb
+
+- name: output application elb details to file
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ elb_outputfile }}"
+    line: "{{ aws_region }};application;{{ elb.load_balancer_name }};{{ elb.dns_name }};;;;;;{{ elb.security_groups }};;{{ elb.state }}"
+  loop: "{{ all_app_elbs_within_region.load_balancers }}"
+  loop_control:
+    loop_var: elb
+    label: "{{ aws_region }} {{ elb.load_balancer_name }}"
+  when: inventory_elb
+
+- name: output application elb details to screen
+  debug:
+    msg:
+      - "elb_type: application"
+      - "elb_name: {{ elb.load_balancer_name }}"
+      - "elb_dns_name: {{ elb.dns_name }}"
+      - "elb_instances:"
+      - "elb_scheme:"
+      - "elb_security_groups: {{ elb.security_groups }}"
+      - "elb_listeners:"
+      - "elb_state: {{ elb.state }}"
+  loop: "{{ all_app_elbs_within_region.load_balancers }}"
+  loop_control:
+    loop_var: elb
+    label: "{{ aws_region }} {{ elb.load_balancer_name }}"
+  when: inventory_elb and verbose
+
+#output RDS instance information
+- name: get a list of all rds instances in {{ aws_region }}
+  rds_instance_facts:
+    region: "{{ aws_region }}"
+  register: all_rds_instances_within_region
+  when: inventory_rds_instance
+
+- name: output rds instance details to file
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ rds_instance_outputfile }}"
+    line: "{{ aws_region }};{{rds_instance.db_instance_identifier}};{{rds_instance.availability_zone}};{{rds_instance.allocated_storage}};{{rds_instance.auto_minor_version_upgrade}};{{rds_instance.availability_zone}};{{rds_instance.backup_retention_period}};{{rds_instance.db_instance_class}};{{rds_instance.db_instance_port}};{{rds_instance.db_instance_status}};{{rds_instance.db_parameter_groups}};{{rds_instance.db_security_groups}};{{rds_instance.db_subnet_group}};{{rds_instance.engine}};{{rds_instance.engine_version}};{{rds_instance.preferred_backup_window}};{{rds_instance.preferred_maintenance_window}};{{rds_instance.publicly_accessible}};{{rds_instance.storage_type}};{{rds_instance.vpc_security_groups}};{{rds_instance.tags}}"
+  loop: "{{ all_rds_instances_within_region.instances }}"
+  loop_control:
+    loop_var: rds_instance
+    label: "{{ aws_region }} {{ rds_instance.db_instance_identifier }}"
+  when: inventory_rds_instance
+
+- name: output rds instance details to screen
+  debug:
+    msg:
+      - "{{ all_rds_instances_within_region }}"
+      - "db_instance_identifier: {{rds_instance.db_instance_identifier}}"
+      - "availability_zone: {{rds_instance.availability_zone}}"
+      - "allocated_storage: {{rds_instance.allocated_storage}}"
+      - "auto_minor_version_upgrade: {{rds_instance.auto_minor_version_upgrade}}"
+      - "availability_zone: {{rds_instance.availability_zone}}"
+      - "backup_retention_period: {{rds_instance.backup_retention_period}}"
+      - "instance_class: ;{{rds_instance.db_instance_class}}"
+      - "db_instance_port: {{rds_instance.db_instance_port}}"
+      - "db_instance_status: {{rds_instance.db_instance_status}}"
+      - "db_parameter_groups: {{rds_instance.db_parameter_groups}}"
+      - "db_security_groups: {{rds_instance.db_security_groups}}"
+      - "db_subnet_group: {{rds_instance.db_subnet_group}}"
+      - "engine: {{rds_instance.engine}}"
+      - "engine_version: {{rds_instance.engine_version}}"
+      - "preferred_backup_window: {{rds_instance.preferred_backup_window}}"
+      - "preferred_maintenance_window: {{rds_instance.preferred_maintenance_window}}"
+      - "publicly_accessible: {{rds_instance.publicly_accessible}}"
+      - "storage_type: {{rds_instance.storage_type}}"
+      - "security_groups: {{rds_instance.vpc_security_groups}}"
+      - "tags: {{rds_instance.tags}}"
+  loop: "{{ all_rds_instances_within_region.instances }}"
+  loop_control:
+    loop_var: rds_instance
+    label: "{{ aws_region }} {{ rds_instance.db_instance_identifier }}"
+  when: inventory_rds_instance and verbose
+
+#output RDS snapshot information
+- name: get a list of all rds snapshots {{ aws_region }}
+  rds_snapshot_facts:
+    region: "{{ aws_region }}"
+  register: all_rds_snapshots_within_region
+  when: inventory_rds_snapshot
+
+- name: output rds snapshot details to file
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ rds_snapshot_outputfile }}"
+    line: "{{ aws_region }};{{rds_snapshot.db_snapshot_identifier}};{{rds_snapshot.snapshot_create_time}};{{rds_snapshot.snapshot_type}};{{rds_snapshot.db_instance_identifier}};{{rds_snapshot.encrypted}};{{rds_snapshot.percent_progress}};{{rds_snapshot.allocated_storage}};{{rds_snapshot.availability_zone}};{{rds_snapshot.tags}}"
+  loop: "{{ all_rds_snapshots_within_region.snapshots }}"
+  loop_control:
+    loop_var: rds_snapshot
+    label: "{{ aws_region }} {{ rds_snapshot.db_snapshot_identifier }}"
+  when: inventory_rds_snapshot
+
+- name: output rds snapshot details to screen
+  debug:
+    msg:
+      - "db_snapshot_identifier: {{rds_snapshot.db_snapshot_identifier}}"
+      - "snapshot_create_time: {{rds_snapshot.snapshot_create_time}}"
+      - "snapshot_type: {{rds_snapshot.snapshot_type}}"
+      - "db_instance_identifier: {{rds_snapshot.db_instance_identifier}}"
+      - "encrypted: {{rds_snapshot.encrypted}}"
+      - "percent_progress: {{rds_snapshot.percent_progress}}"
+      - "allocated_storage: {{rds_snapshot.allocated_storage}}"
+      - "availability_zone: {{rds_snapshot.availability_zone}}"
+      - "tags: {{rds_snapshot.tags}}"
+  loop: "{{ all_rds_snapshots_within_region.snapshots }}"
+  loop_control:
+    loop_var: rds_snapshot
+    label: "{{ aws_region }} {{ rds_snapshot.db_snapshot_identifier }}"
+  when: inventory_rds_snapshot and verbose
+
+#output s3 information
+- name: get a list of s3 buckets in {{ aws_region }}
+  aws_s3_bucket_facts:
+    region: "{{ aws_region }}"
+  register: all_s3_buckets_within_region
+  when: inventory_s3
+
+- name: output s3 bucket details to file
+  lineinfile:
+    state: present
+    create: yes
+    path: "{{ s3_outputfile }}"
+    line: "{{ aws_region }};{{ s3.name }};{{ s3.creation_date }}"
+  loop: "{{ all_s3_buckets_within_region.ansible_facts.buckets }}"
+  loop_control:
+    loop_var: s3
+    label: "{{ aws_region }} {{ s3.name }}"
+  when: inventory_s3
+
+- name: output s3 bucket details to screen
+  debug:
+    msg:
+      - "s3_name: {{ s3.name }}"
+      - "s3_creation_date: {{ s3.creation_date }}"
+  loop: "{{ all_s3_buckets_within_region.ansible_facts.buckets }}"
+  loop_control:
+    loop_var: s3
+    label: "{{ aws_region }} {{ s3.name }}"
+  when: inventory_s3 and verbose
