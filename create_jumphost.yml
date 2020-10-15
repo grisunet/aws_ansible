@@ -1,5 +1,5 @@
 ---
-- name: Create a new Training instance
+- name: Create the jumphost
   hosts: localhost
   gather_facts: False
 
