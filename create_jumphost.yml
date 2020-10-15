@@ -1,0 +1,29 @@
+---
+- name: Create a new Training instance
+  hosts: localhost
+  gather_facts: False
+
+  vars:
+      region: eu-central-1
+      instance_type: t3.micro
+      ami: ami-032025b3afcbb6b34  # CentOS 8.2-2.2004
+      keypair: beegfs # pem file name
+  
+  tasks:
+
+    - name: Create an ec2 instance
+      ec2:
+         key_name: "{{ keypair }}"
+         group: default  # security group name
+         instance_type: "{{ instance_type}}"
+         image: "{{ ami }}"
+         wait: true
+         region: "{{ region }}"
+         vpc_subnet_id: subnet-07eaa9a5491e5538d
+         assign_public_ip: yes
+         instance_tags:
+            Name: "jump"
+         exact_count: 1   
+         count_tag:
+           Name: jump* 
+      register: ec2
