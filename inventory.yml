@@ -1,0 +1,22 @@
+---
+- name: test aws ec2
+  hosts: localhost
+  connection: local
+  gather_facts: False
+
+  vars:
+    region: eu-central-1
+  tasks:
+
+    - name: Gathers facts (instance metadata) about remote hosts remote ec2 (all)
+      ec2_instance_info:
+        region: "{{ region }}"
+        filters:
+        
+          instance-state-name: [ "running", "shutting-down", "stopping", "stopped" ]
+      register: ec2_metadata
+
+    - debug:
+        msg: "{{ item }}"
+      with_items: "{{ ec2_metadata.instances  |  list }}"
+...
