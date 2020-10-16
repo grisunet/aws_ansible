@@ -26,4 +26,9 @@
          exact_count: 1   
          count_tag:
            Name: jump* 
+    - name: associate an elastic IP with a device
+      ec2_eip:
+        region: "{{ region }}"
+        device_id: i-081ce4663bdf36b7e
+        ip: 3.126.1.2      
       register: ec2
