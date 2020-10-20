@@ -1,0 +1,18 @@
+Alle beschriebenen Schritte mit dem user, der für ansible verwendet werden soll, ausführen.
+
+    Einrichten AWS-Cli
+
+    Installation: apt install awscli
+
+    Konfiguration AWS-Cli
+
+    mkdir .aws
+    cd .aws
+    vi credentials
+    [default]
+    aws_access_key_id=<access key id>
+    aws_secret_access_key=<access key secret>
+    vi config
+    [default]
+    region = eu-central-1
+    output = yaml
