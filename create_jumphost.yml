@@ -26,9 +26,11 @@
          exact_count: 1   
          count_tag:
            Name: jump* 
+      register: newinstance     
     - name: associate an elastic IP with a device
       ec2_eip:
+        in_vpc: true
         region: "{{ region }}"
-        device_id: i-081ce4663bdf36b7e
-        ip: 3.126.1.2      
-      register: ec2
+        device_id: eni-03ff3158ce30658df
+        public_ip: 3.126.1.2
+        allow_reassociation: yes
