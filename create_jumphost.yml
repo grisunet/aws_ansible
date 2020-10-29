@@ -7,6 +7,9 @@
       region: eu-central-1
       instance_type: t3.micro
       ami: ami-032025b3afcbb6b34  # CentOS 8.2-2.2004
+      dev_id: eni-0274f12b8d3f5c292
+      subnet: subnet-89e391f2  
+      pub_ip: 18.193.169.97
       keypair: beegfs # pem file name
   
   tasks:
@@ -19,7 +22,7 @@
          image: "{{ ami }}"
          wait: true
          region: "{{ region }}"
-         vpc_subnet_id: subnet-07eaa9a5491e5538d
+         vpc_subnet_id: "{{ subnet }}"
          assign_public_ip: yes
          instance_tags:
             Name: "jump"
@@ -31,6 +34,6 @@
       ec2_eip:
         in_vpc: true
         region: "{{ region }}"
-        device_id: eni-03ff3158ce30658df
-        public_ip: 3.126.1.2
+        device_id: "{{ dev_id }}"
+        public_ip: "{{ pub_ip }}"
         allow_reassociation: yes
