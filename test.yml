@@ -1,0 +1,35 @@
+---
+- name: Fetch instance Info
+  hosts: localhost 
+  gather_facts: False
+
+  vars:
+      host: jump
+      grp: training
+      reg: eu-central-1
+      ansible_user: centos
+      path: inventory/
+
+  tasks:
+
+    - name: Info ec2 unsing ec2_instance
+      ec2_instance_info:
+        region: "{{ reg }}" 
+        filters:
+          "tag:Name": "{{ host }}"
+      register: ec2_info
+      tags:
+       - always
+    - name: Display output
+      debug: 
+        msg: 
+        - "{{ item.private_dns_name }}"
+        - "{{ item.instance_id }}"
+        - "{{ item.tags }}"
+      with_items: "{{ ec2_info.instances }}"
+
+    - local_action:
+            module: copy
+            content: "{{ ec2_info.instances }}"
+            #dest: /tmp/host.out   
+            dest: "{{ path +  host }}"   
